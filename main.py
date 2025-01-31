@@ -1,13 +1,5 @@
 import boto3
-import json
-import os
-import joblib
-import pickle
-import tarfile
 import sagemaker
-from sagemaker.estimator import Estimator
-import time
-from time import gmtime, strftime
 import subprocess
 
 # Setup
@@ -21,7 +13,7 @@ sagemaker_session = sagemaker.Session()
 role = "arn:aws:iam::716513171636:role/LabRole"
 
 # Build tar file with model data + inference code
-bashCommand = "tar -cvpzf model.tar.gz models/model.pkl inference.py"
+bashCommand = "tar -cvpzf model.tar.gz model.pkl preprocessor.pkl inference.py"
 process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
 output, error = process.communicate()
 
@@ -37,13 +29,13 @@ response = s3.meta.client.upload_file("model.tar.gz", default_bucket, "model.tar
 image_uri = sagemaker.image_uris.retrieve(
     framework="sklearn",
     region=region,
-    version="0.23-1",
+    version="1.2-1",
     py_version="py3",
     instance_type="ml.t3.medium",
 )
 
 # Step 1: Model Creation
-model_name = "sklearn-test" + strftime("%Y-%m-%d-%H-%M-%S", gmtime())
+model_name = "wanderguard-predictor"
 print("Model name: " + model_name)
 create_model_response = client.create_model(
     ModelName=model_name,
@@ -61,35 +53,3 @@ create_model_response = client.create_model(
     ExecutionRoleArn=role,
 )
 print("Model Arn: " + create_model_response["ModelArn"])
-
-# Step 2: EPC Creation
-sklearn_epc_name = "sklearn-epc" + strftime("%Y-%m-%d-%H-%M-%S", gmtime())
-endpoint_config_response = client.create_endpoint_config(
-    EndpointConfigName=sklearn_epc_name,
-    ProductionVariants=[
-        {
-            "VariantName": "sklearnvariant",
-            "ModelName": model_name,
-            "InstanceType": "ml.t3.medium",
-            "InitialInstanceCount": 1,
-        },
-    ],
-)
-print("Endpoint Configuration Arn: " + endpoint_config_response["EndpointConfigArn"])
-
-#Step 3: EP Creation
-endpoint_name = "sklearn-local-ep" + strftime("%Y-%m-%d-%H-%M-%S", gmtime())
-create_endpoint_response = client.create_endpoint(
-    EndpointName=endpoint_name,
-    EndpointConfigName=sklearn_epc_name,
-)
-print("Endpoint Arn: " + create_endpoint_response["EndpointArn"])
-
-
-#Monitor creation
-describe_endpoint_response = client.describe_endpoint(EndpointName=endpoint_name)
-while describe_endpoint_response["EndpointStatus"] == "Creating":
-    describe_endpoint_response = client.describe_endpoint(EndpointName=endpoint_name)
-    print(describe_endpoint_response["EndpointStatus"])
-    time.sleep(15)
-print(describe_endpoint_response)
